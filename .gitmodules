@@ -1,0 +1,3 @@
+[submodule "extern/EEPROM-Programmer"]
+	path = extern/EEPROM-Programmer
+	url = https://github.com/CAt0mIcS/EEPROM-Programmer.git
