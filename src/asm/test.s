@@ -11,23 +11,24 @@ LCD_E_BIT =      %00100000
 LCD_NOT_E_BIT =  LCD_E_BIT ^ $ff
 LCD_RS_BIT =     %00010000
 LCD_NOT_RS_BIT = LCD_RS_BIT ^ $ff
+LCD_READ_BIT = %01000000
 
     .org $8000
 
 reset:
-    ; Set Data Direction Register B to output
-    lda #$ff
+    ; Set PortB (LCD) to output
+    lda #%11111111
     sta DDRB
 
 lcd:
     ; LCD bit sequence:
-    ; X-X-E-RS-D7/D3-D6/D2-D5/D1-D4/D0
+    ; X-RW-E-RS-D7/D3-D6/D2-D5/D1-D4/D0
 
     ; Set LCD function set to 4-bit data mode with 2 display lines and 5x8 dots format display mode (0b0010-1000)
     ; In 4-bit mode, first the 4 higher order bits are sent and then the 4 lower order bits.
     ; The enable pin is pulsed HIGH after the higher order bits are set and pulsed low again before the lower order bits are set. Then pulsed HIGH/LOW again to latch lower order bits 
     
-    ; First send one 8-bit sequence (only 4 bits will be received) which will set the LCD to 4-bit mode
+    ; First send one 8-bit sequence (only 4 higher-order bits will be received) which will set the LCD to 4-bit mode
     lda #%00100010
     sta PORTB
 
@@ -76,6 +77,40 @@ loop:
 
     jmp loop
 
+lcd_wait_busy:
+    lda #%11110000 ; Set higher-order bits of register B to output, the rest to input
+    sta DDRB
+
+    lda #LCD_READ_BIT
+    sta PORTB
+
+lcd_wait_busy_internal:
+    lda #(LCD_READ_BIT | LCD_E_BIT)
+    sta PORTB
+    ; nop ; 300ns hold
+
+    lda PORTB ; Here we should be loading the busy bit + 0x60
+    tax
+
+    lda #LCD_READ_BIT
+    sta PORTB
+
+    ; We need to pulse E_BIT again due to the 4-bit operation mode
+    lda #(LCD_READ_BIT | LCD_E_BIT)
+    sta PORTB
+    ; nop ; 300ns hold
+
+    lda #LCD_READ_BIT
+    sta PORTB
+
+    txa
+    and #%00001000 ; Pick out the busy pin, which sets the zero flag register
+    bne lcd_wait_busy_internal
+
+    lda #%11111111 ; Set register B back to output
+    sta DDRB
+    rts
+
 lcd_write_instruction:
     tax
     ; lda (LCD_E_BIT | higher order bits)
@@ -103,6 +138,7 @@ lcd_write_instruction:
     ; lda lower order bits
     sta PORTB
 
+    jsr lcd_wait_busy
     rts
 
 lcd_write_char:
