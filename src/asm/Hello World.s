@@ -31,6 +31,8 @@ lcd:
     ; Reset display to 8-bit mode by sending the higher nibble three times. This is required if we reset the 6502 multiple times without powering it off, as the LCD retains its settings
     ldy #3
 lcd_init4:
+    jsr lcd_wait_busy
+    
     lda #(LCD_E_BIT | %00000011)
     sta PORTB
 
@@ -38,18 +40,16 @@ lcd_init4:
     and #LCD_NOT_E_BIT
     sta PORTB
     
-    jsr lcd_wait_busy
     dey
     bne lcd_init4
 
     ; Send nibble to turn on 4-bit mode again
+    jsr lcd_wait_busy
     lda #(LCD_E_BIT | %00000010)
     sta PORTB
 
     and #LCD_NOT_E_BIT
     sta PORTB
-
-    jsr lcd_wait_busy
     ; From here on, the LCD is in 4-bit mode
 
     ; Send the actual command to display 2 lines with 5x8 dots format in 4-bit mode (0b0010-1000)
@@ -68,13 +68,14 @@ lcd_init4:
     lda #%00000001
     jsr lcd_write_instruction
 
+    jsr lcd_setup_delay
+
     ; Print the message
     ldy #0
 message_print_loop:
     lda message,y
     beq halt
     jsr lcd_write_char
-    jsr lcd_wait_busy
     iny
     jmp message_print_loop
 
@@ -85,6 +86,7 @@ halt:
 message: .asciiz "Hello, World!"
 
 lcd_wait_busy:
+    pha
     lda #%11110000 ; Set higher-order bits of register B to output, the rest to input
     sta DDRB
     nop
@@ -120,9 +122,13 @@ lcd_wait_busy_internal:
     lda #%11111111 ; Set register B back to output
     sta DDRB
     nop
+
+    pla
     rts
 
 lcd_write_instruction:
+    jsr lcd_wait_busy
+
     tax
     ; lda (LCD_E_BIT | higher order bits)
     and #%11110000
@@ -152,10 +158,11 @@ lcd_write_instruction:
     sta PORTB
     nop
 
-    jsr lcd_wait_busy
     rts
 
 lcd_write_char:
+    jsr lcd_wait_busy
+    
     tax
     ; lda (LCD_E_BIT | LCD_RS_BIT | higher order bits)
     and #%11110000
@@ -186,6 +193,15 @@ lcd_write_char:
     sta PORTB
     nop
 
+    rts
+
+; Wait for some time for LCD to switch between instruction mode and char write mode (somehow required, despite busy flag check)
+lcd_setup_delay:
+    ldx #255
+lcd_setup_delay_internal:
+    nop
+    dex
+    bne lcd_setup_delay_internal
     rts
 
     .org $fffc
